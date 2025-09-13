@@ -139,10 +139,10 @@ class PixelArtConverter:
         self.pixel_canvas.grid(row=0, column=0, sticky="nsew")
         
         # Drag and drop area
-        drop_label = ttk.Label(original_frame, 
-                              text="Drag an image here\nor click to browse", 
-                              font=("Arial", 12))
-        drop_label.place(relx=0.5, rely=0.5, anchor="center")
+        self.drop_label = ttk.Label(original_frame,
+                                    text="Drag an image here\nor click to browse",
+                                    font=("Arial", 12))
+        self.drop_label.place(relx=0.5, rely=0.5, anchor="center")
         
         # Configure click to browse for images
         self.original_canvas.bind('<Button-1>', self.browse_file)
@@ -247,22 +247,65 @@ class PixelArtConverter:
             if isinstance(source, BytesIO):
                 self.original_image = Image.open(source)
             else:
-                self.original_image = Image.open(source)
+                # Check if it's a WebP file and try alternative loading
+                if isinstance(source, str) and source.lower().endswith('.webp'):
+                    try:
+                        self.original_image = Image.open(source)
+                    except Exception as webp_error:
+                        # Try using webp library as fallback
+                        try:
+                            import webp
+                            # Convert WebP to PIL Image using webp library
+                            webp_data = webp.load_image(source)
+                            self.original_image = Image.fromarray(webp_data)
+                        except ImportError:
+                            raise Exception("WebP support not available. Try: pip install --upgrade Pillow")
+                        except Exception as fallback_error:
+                            raise Exception(f"WebP loading failed. Original error: {webp_error}")
+                else:
+                    self.original_image = Image.open(source)
                 
             # Convert to RGB if necessary
             if self.original_image.mode != 'RGB':
                 self.original_image = self.original_image.convert('RGB')
                 
             self.display_original_image()
-            messagebox.showinfo("Success", "Image loaded successfully!")
+            
+            # Show format info
+            img_format = getattr(self.original_image, 'format', 'Unknown')
+            img_size = self.original_image.size
+            messagebox.showinfo("Success", 
+                f"Image loaded successfully!\n"
+                f"Format: {img_format}\n"
+                f"Size: {img_size[0]} x {img_size[1]} pixels")
             
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to load image:\n{str(e)}")
+            error_msg = str(e)
+            if "cannot identify image file" in error_msg.lower():
+                messagebox.showerror("Error", 
+                    f"Unsupported image format or corrupted file.\n\n"
+                    f"Supported formats: JPEG, PNG, GIF, BMP, TIFF, WebP\n"
+                    f"For WebP support, try:\n"
+                    f"pip install --upgrade Pillow\n\n"
+                    f"Error: {error_msg}")
+            elif "webp" in error_msg.lower():
+                messagebox.showerror("WebP Error", 
+                    f"WebP support issue.\n\n"
+                    f"Solutions:\n"
+                    f"1. pip install --upgrade Pillow\n"
+                    f"2. Convert WebP to PNG online first\n"
+                    f"3. Install system WebP libraries\n\n"
+                    f"Error: {error_msg}")
+            else:
+                messagebox.showerror("Error", f"Failed to load image:\n{error_msg}")
             
     def display_original_image(self):
         """Display the original image on canvas"""
         if not self.original_image:
             return
+            
+        # Hide the click to browse label
+        self.drop_label.place_forget()
             
         # Resize image to fit canvas while maintaining aspect ratio
         canvas_width = self.original_canvas.winfo_width()
